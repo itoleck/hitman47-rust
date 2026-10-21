@@ -1,0 +1,30 @@
+[package]
+name = "hm1vk"
+description = "DirectDraw 7 / Direct3D 7 implemented on Vulkan, for Hitman: Codename 47's RenderD3D.dll"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[lib]
+# Built as ddraw.dll so RenderD3D.dll's `DDRAW.dll` import binds to it.
+name = "ddraw"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ash = { version = "0.38", default-features = false, features = ["loaded", "debug"] }
+gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Performance",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_HiDpi",
+] }
+
+[build-dependencies]
+naga = { version = "25", features = ["wgsl-in", "spv-out"] }

@@ -1,0 +1,47 @@
+# Rust / Cargo
+/target/
+**/target/
+**/*.rs.bk
+*.pdb
+
+# Build outputs and packaging
+/dist/
+*.exe
+*.dll
+*.lib
+*.exp
+*.ilk
+*.obj
+*.o
+*.a
+*.so
+*.dylib
+
+# Logs and runtime output
+*.log
+logs/
+
+# Scratch / temporary files (Claude scratchpad, editors, OS)
+/.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node (tooling)
+node_modules/
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+
+# Reverse-engineering workspace (Ghidra projects, dumps of game binaries)
+/re/ghidra_proj/
+*.gpr
+*.rep/
+*.bin

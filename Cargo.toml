@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["launcher", "hm1vk"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Chad Schultz <itoleck@gmail.com>"]
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+debug = 1
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
