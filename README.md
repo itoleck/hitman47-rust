@@ -1,4 +1,4 @@
-# HM1-Rust
+# HitMan-Rust
 
 A Rust re-implementation of **Hitman: Codename 47**'s launcher (`Hitman.Exe`)
 plus a **Vulkan** implementation of the DirectDraw 7 / Direct3D 7 API the game
@@ -8,6 +8,7 @@ This project has no files from the Hitman: Codename 47 game. You must have the f
 
 Hitman: Codename 47 is owned by IO Interactive A/S.
 
+What's in the release:
 ```
 HitMan-Rust.exe            (launcher/)  Rust port of Hitman.Exe's WinMain
 HitManVK\ddraw.dll         (hm1vk/)     DirectDraw 7 + Direct3D 7 on Vulkan
