@@ -97,3 +97,50 @@ textures are created as a system-memory surface plus a managed texture and
 copied with `Blt(DDBLT_WAIT)`. Geometry is drawn with
 `DrawIndexedPrimitiveVB` from a 10000-vertex `D3DFVF_XYZ|DIFFUSE|TEX3`
 (fvf 0x342) vertex buffer; 2D elements with `DrawPrimitive` triangle fans.
+
+## Camera / field of view
+
+* The gameplay FOV is the camera controller's `CameraFOV` property
+  (HitmanDlc.dlc class string `double CameraFOV=67.4;`; every scene's Pack.SPK
+  stores it too). It is horizontal, in degrees; the vertical FOV follows from
+  the viewport aspect (41.1 degrees at 16:9).
+* RenderD3D.dll sets up every camera in `FUN_0fba6410` (RVA 0x26410,
+  `__thiscall(render, camera, char)`, slot 0x30 of both render-object vtables
+  at RVA 0x351F8 and 0x35D70). It reads the camera's FOV as a double in
+  radians at `camera+0x16E`, near at `+0x17E` (clamped to >= 5), far at
+  `+0x186`, and calls vtable slot 0x118 (`0fb831f0`), which builds the
+  projection (`FUN_0fb81840` perspective / `FUN_0fb818b0` ortho) and calls
+  `IDirect3DDevice7::SetTransform(PROJECTION)`.
+* Projections seen: gameplay 67.4 (full-height viewport), cutscenes letterboxed
+  (e.g. 3840x1620) with their own FOVs, HUD 3D overlay 45, 2D identity.
+
+## 2D interface and mouse
+
+* All 2D UI (menus, laptop, HUD, subtitles, the menu cursor) is drawn as
+  untransformed (XYZ) geometry with a 45-degree perspective projection and an
+  identity view matrix, at fixed depths (menus z=120, HUD z=21..35, cursor
+  z=11), positioned in absolute screen pixels; text strings are one draw each.
+* The menu cursor is a 16x16 textured quad at z=11, drawn last.
+* RenderD3D's window procedure (`0fba7a..`) forwards WM_MOUSEMOVE/buttons
+  (client coordinates) to the render object (vtable 0x194 move, 0x178/0x17C
+  left button); the game moves its cursor by the offset of the mouse from the
+  screen centre times about 1.3 (default sensitivity) and recentres the
+  system cursor, i.e. the cursor is relative, not absolute.
+
+## Controls / movement
+
+* Key bindings (`Hitman.cfg`) map scancodes to named actions; RenderD3D's
+  window procedure stores key states by virtual key and scancode in
+  ZSysInterface (+0xAB5.. / +0x19B5.., 15 bytes per key).
+* The input manager is `ZSysInterface+0x37B1` (System.dll, vtable
+  RVA 0x33210); slot 0x24 (RVA 0x2350) is `IsActionActive(name, callerId)`.
+  callerId 0 means "use the return address"; it separates "pressed once"
+  state per caller.
+* The player's controls function is HitmanDlc.dlc `FUN_0fdf0c70` (RVA
+  0x130C70, vtable slot RVA 0x20A70C). It builds movement bits in
+  `player+0x3034`: 1 walk, 2 run, 4 backward, 8 strafe left, 0x10 strafe right
+  (`Run` -> 2 or, if `player+0x77A` is set, 1; `WalkForward` -> 1;
+  `RunBackward` -> 6; `WalkBackward` -> 5; `WalkLeft/Right` -> 8/0x10).
+* `FUN_0fdeae10` selects the movement animation (`player+0x945`): with the
+  walk bit the walk set; with run and no walk bit `Run` (+0x1855),
+  `Run_Str_Left/Right` (+0x18F9/+0x199D, diagonal) or `Run_Backward` (+0x1A41).

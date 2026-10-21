@@ -1,4 +1,4 @@
-# Test harness: deploys dist\ to the game folder, starts HitMan-Rust.exe,
+# Test harness: deploys dist\ to the game folder (tools\deploy.ps1), starts HitMan-Rust.exe,
 # captures screenshots at intervals, then closes the game and collects logs.
 param(
     [string]$Game = 'E:\Games\SteamRoot\Steam\steamapps\common\Hitman Codename 47',
@@ -39,7 +39,7 @@ function Shot($name) {
 # The engine allows one instance (mutex "Hitboy"): make sure earlier runs are gone.
 Get-Process HitMan-Rust, Hitman -ErrorAction SilentlyContinue | ForEach-Object { $_.Kill(); $_.WaitForExit(15000) | Out-Null }
 Start-Sleep -Seconds 2
-if (-not $NoDeploy) { & (Join-Path $PSScriptRoot 'deploy.bat') $Game }
+if (-not $NoDeploy) { & (Join-Path $PSScriptRoot 'deploy.ps1') -Game $Game }
 if ($GameArgs) {
     $p = Start-Process -FilePath (Join-Path $Game $Exe) -WorkingDirectory $Game -ArgumentList $GameArgs -PassThru
 } else {

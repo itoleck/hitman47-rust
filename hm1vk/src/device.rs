@@ -256,6 +256,12 @@ impl Device {
         dev
     }
 
+    /// Sets the projection (logged at LogLevel 1, see fov.rs).
+    unsafe fn set_projection(&mut self, m: D3DMATRIX) {
+        crate::fov::on_projection(&m, self.viewport.dwHeight);
+        self.proj = m;
+    }
+
     /// world * view * projection * viewport mapping (used by ProcessVertices).
     pub fn world_view_proj_viewport(&self) -> D3DMATRIX {
         let vp = &self.viewport;
@@ -447,7 +453,7 @@ impl Device {
         u
     }
 
-    fn raster(&self, prim: u32, rhw: bool, rt_w: u32, rt_h: u32, rt_alpha: bool) -> RasterState {
+    fn raster(&self, prim: u32, rhw: bool, rt_w: u32, rt_h: u32, rt_alpha: bool, ui_vp: Option<[f32; 4]>) -> RasterState {
         let blend = if self.r(rs::ALPHABLENDENABLE) != 0 {
             let (mut s, mut d) = (self.r(rs::SRCBLEND), self.r(rs::DESTBLEND));
             if s == D3DBLEND_BOTHSRCALPHA {
@@ -497,10 +503,18 @@ impl Device {
                 max_depth: vp.dvMaxZ.clamp(0.0, 1.0),
             }
         };
-        let x0 = (vp.dwX as i32).clamp(0, rt_w as i32);
-        let y0 = (vp.dwY as i32).clamp(0, rt_h as i32);
-        let x1 = ((vp.dwX + vp.dwWidth) as i32).clamp(0, rt_w as i32);
-        let y1 = ((vp.dwY + vp.dwHeight) as i32).clamp(0, rt_h as i32);
+        // UI zoom (ui.rs): the viewport scaled about its anchor; clip to it.
+        let (viewport, (x0, y0, x1, y1)) = match ui_vp {
+            Some(v) if !rhw => (
+                vk::Viewport { x: v[0], y: v[1], width: v[2], height: v[3], ..viewport },
+                (v[0].floor() as i32, v[1].floor() as i32, (v[0] + v[2]).ceil() as i32, (v[1] + v[3]).ceil() as i32),
+            ),
+            _ => (viewport, (vp.dwX as i32, vp.dwY as i32, (vp.dwX + vp.dwWidth) as i32, (vp.dwY + vp.dwHeight) as i32)),
+        };
+        let x0 = x0.clamp(0, rt_w as i32);
+        let y0 = y0.clamp(0, rt_h as i32);
+        let x1 = x1.clamp(0, rt_w as i32);
+        let y1 = y1.clamp(0, rt_h as i32);
         let topology = match prim {
             D3DPT_POINTLIST => vk::PrimitiveTopology::POINT_LIST,
             D3DPT_LINELIST => vk::PrimitiveTopology::LINE_LIST,
@@ -555,23 +569,34 @@ impl Device {
         }
         self.draws_this_frame += 1;
         let Some((rid, zid, rw, rh, rt_alpha)) = self.targets() else { return D3D_OK };
-        if matches!((*self.rt).kind, Kind::BackBuffer | Kind::Primary) {
-            let region = if layout.rhw {
-                let mut b = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
-                for v in &self.scratch {
-                    b[0] = b[0].min(v.pos[0]);
-                    b[1] = b[1].min(v.pos[1]);
-                    b[2] = b[2].max(v.pos[0]);
-                    b[3] = b[3].max(v.pos[1]);
-                }
-                Some(b)
-            } else {
-                Some(self.projected_bounds())
-            };
-            // Small quads (the game's mouse cursor, icons) may sit outside a
-            // menu panel; they don't decide the panel's extent.
-            let region = region.filter(|b| b[2] - b[0] >= 96.0 || b[3] - b[1] >= 96.0);
-            world().note_draw(region);
+        // UI zoom (ui.rs): scale draws made with the engine's UI camera.
+        let mut ui_vp = None;
+        if matches!((*self.rt).kind, Kind::BackBuffer | Kind::Primary) && !layout.rhw {
+            let ui = crate::ui::is_ui_camera(&self.proj, &self.view);
+            let b = self.projected_bounds();
+            // The game's mouse cursor: one 16x16 textured quad at depth 11.
+            let t = self.textures[0];
+            let cursor = ui
+                && vcount == 4
+                && !t.is_null()
+                && (*t).width() == 16
+                && (*t).height() == 16
+                && self.scratch.iter().all(|v| v.pos[2] == 11.0);
+            // Interface elements are flat (every vertex at the same depth);
+            // the UI camera is also used for 3D models such as Hitman's body
+            // on the death screen, which must not be treated as HUD pieces.
+            let flat = !ui || self.flat_in_view();
+            let big_mesh = ui && !flat && (b[2] - b[0] > rw as f32 / 5.0 || b[3] - b[1] > rh as f32 / 5.0);
+            crate::ui::note_draw(ui, b, cursor, big_mesh);
+            if ui {
+                let vp = &self.viewport;
+                ui_vp = crate::ui::scaled_viewport(
+                    b,
+                    (vp.dwX as f32, vp.dwY as f32, vp.dwWidth as f32, vp.dwHeight as f32),
+                    (rw as f32, rh as f32),
+                    flat,
+                );
+            }
         }
 
         // Textures (uploads may break the pass, so they happen first).
@@ -593,7 +618,7 @@ impl Device {
 
         let vsu = self.vs_uniforms(layout, rw, rh);
         let fsu = self.fs_uniforms(&bound);
-        let raster = self.raster(prim, layout.rhw, rw, rh, rt_alpha);
+        let raster = self.raster(prim, layout.rhw, rw, rh, rt_alpha, ui_vp);
 
         let Some(g) = world().gpu() else { return D3D_OK };
         let align = g.ubo_align;
@@ -638,8 +663,21 @@ impl Device {
         D3D_OK
     }
 
+    /// True if all vertices in `scratch` lie at the same camera depth (a flat
+    /// interface element rather than a 3D model).
+    fn flat_in_view(&self) -> bool {
+        let m = self.world[0].mul(&self.view);
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for v in &self.scratch {
+            let z = v.pos[0] * m.m[0][2] + v.pos[1] * m.m[1][2] + v.pos[2] * m.m[2][2] + m.m[3][2];
+            lo = lo.min(z);
+            hi = hi.max(z);
+        }
+        hi - lo <= 0.01 + hi.abs() * 1e-4
+    }
+
     /// Screen-space bounds of the transformed vertices in `scratch` (used by
-    /// the menu zoom). Large meshes and geometry crossing the camera plane
+    /// the UI zoom). Large meshes and geometry crossing the camera plane
     /// count as covering the whole viewport.
     fn projected_bounds(&self) -> [f32; 4] {
         let vp = &self.viewport;
@@ -1011,6 +1049,10 @@ unsafe extern "system" fn d_set_transform(this: This, state: u32, m: *const D3DM
     if d.record(|b| b.transforms.push((state, mm))) {
         return D3D_OK;
     }
+    if state == D3DTRANSFORMSTATE_PROJECTION {
+        d.set_projection(mm);
+        return D3D_OK;
+    }
     match transform_slot(d, state) {
         Some(slot) => {
             *slot = mm;
@@ -1034,6 +1076,12 @@ unsafe extern "system" fn d_get_transform(this: This, state: u32, m: *mut D3DMAT
 unsafe extern "system" fn d_multiply_transform(this: This, state: u32, m: *const D3DMATRIX) -> HRESULT {
     if m.is_null() {
         return DDERR_INVALIDPARAMS;
+    }
+    if state == D3DTRANSFORMSTATE_PROJECTION {
+        let d = &mut *this;
+        let p = (*m).mul(&d.proj);
+        d.set_projection(p);
+        return D3D_OK;
     }
     match transform_slot(&mut *this, state) {
         Some(slot) => {
@@ -1230,7 +1278,9 @@ unsafe fn apply_block(d: This, b: &StateBlock) {
         d_set_texture_stage_state(d, st, t, v);
     }
     for (s, m) in &b.transforms {
-        if let Some(slot) = transform_slot(&mut *d, *s) {
+        if *s == D3DTRANSFORMSTATE_PROJECTION {
+            (*d).set_projection(*m);
+        } else if let Some(slot) = transform_slot(&mut *d, *s) {
             *slot = *m;
         }
     }

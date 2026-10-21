@@ -27,7 +27,7 @@ use std::path::PathBuf;
 
 use crate::info;
 
-unsafe fn sys_interface() -> *mut u8 {
+pub unsafe fn sys_interface() -> *mut u8 {
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
     let g = GetModuleHandleA(b"Globals.dll\0".as_ptr());
     if g.is_null() {

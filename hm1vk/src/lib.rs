@@ -26,11 +26,14 @@ pub mod device;
 pub mod display;
 pub mod engine;
 pub mod ff;
+pub mod fov;
+pub mod input;
 pub mod log;
 pub mod pixel;
 pub mod state;
 pub mod surface;
 pub mod types;
+pub mod ui;
 pub mod vb;
 pub mod vk;
 
@@ -57,14 +60,13 @@ pub unsafe extern "system" fn DllMain(module: HMODULE, reason: u32, _reserved: *
             let dir = module_dir(module);
             let cfg = config::Config::load(&dir);
             log::init(&dir, cfg.log_level);
-            info!("hm1vk {} loaded from {}", env!("CARGO_PKG_VERSION"), dir.display());
+            info!("hm1vk {} loaded from {}", env!("HITMAN_RUST_VERSION"), dir.display());
             info!("config: {:?}", cfg);
             state::init(dir, cfg);
         }
         DLL_PROCESS_DETACH => {
             // Do not touch Vulkan under the loader lock; just put the
             // desktop back the way we found it.
-            surface::release_cursor_clip();
             let w = state::world();
             if w.display_changed {
                 display::restore_display_mode();

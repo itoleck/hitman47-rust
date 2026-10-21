@@ -117,6 +117,7 @@ pub unsafe extern "system" fn DirectDrawCreateEx(
     let g = if guid.is_null() { "NULL".to_string() } else { (*guid).to_string() };
     info!("DirectDrawCreateEx(guid={g}, iid={})", if iid.is_null() { "NULL".into() } else { (*iid).to_string() });
     crate::engine::fix_resolution();
+    crate::fov::install();
     if out.is_null() {
         return DDERR_INVALIDPARAMS;
     }
@@ -160,6 +161,7 @@ const DRIVER_NAME: &[u8] = b"display\0";
 pub unsafe extern "system" fn DirectDrawEnumerateExA(cb: Option<LPDDENUMCALLBACKEXA>, ctx: *mut c_void, flags: u32) -> HRESULT {
     first_call!("DirectDrawEnumerateExA", "flags={flags:#x}");
     crate::engine::fix_resolution();
+    crate::fov::install();
     if let Some(cb) = cb {
         cb(null_mut(), DRIVER_DESC.as_ptr(), DRIVER_NAME.as_ptr(), ctx, null_mut());
     }
@@ -169,6 +171,7 @@ pub unsafe extern "system" fn DirectDrawEnumerateExA(cb: Option<LPDDENUMCALLBACK
 #[no_mangle]
 pub unsafe extern "system" fn DirectDrawEnumerateA(cb: Option<LPDDENUMCALLBACKA>, ctx: *mut c_void) -> HRESULT {
     crate::engine::fix_resolution();
+    crate::fov::install();
     if let Some(cb) = cb {
         cb(null_mut(), DRIVER_DESC.as_ptr(), DRIVER_NAME.as_ptr(), ctx);
     }
@@ -490,6 +493,7 @@ unsafe extern "system" fn dd_set_cooperative_level(_this: This, hwnd: isize, fla
     let w = world();
     if hwnd != 0 {
         w.hwnd = hwnd;
+        crate::ui::hook_window(hwnd);
     }
     w.coop = flags;
     if flags & DDSCL_FULLSCREEN != 0 && w.hwnd != 0 {

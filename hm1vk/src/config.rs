@@ -28,11 +28,14 @@ pub struct Config {
     /// Restore the .ini resolution that RenderD3D's 4:3 table overrides
     /// (needed for 16:9 and anything above 1600x1200, e.g. 3840x2160).
     pub fix_resolution: bool,
-    /// Scale the engine's fixed-size 2D menu screens (640x480 etc. in the
-    /// centre of the frame) up to fill the display.
-    pub menu_zoom: bool,
-    /// While a menu is zoomed, confine the mouse to the menu panel.
-    pub menu_zoom_clip_cursor: bool,
+    /// Scale factor for the game's 2D interface (menus and HUD), 1.0..=3.0
+    /// (`UIZoom = 1x/2x/3x` or `100%/200%/300%`, see ui.rs).
+    pub ui_zoom: f32,
+    /// Run key modifies every movement direction (input.rs).
+    pub modern_run: bool,
+    /// Horizontal field of view of the gameplay camera in degrees
+    /// (default 67.4 = the game's own; 57.4..87.4, see fov.rs).
+    pub fov: f32,
 }
 
 impl Default for Config {
@@ -49,8 +52,9 @@ impl Default for Config {
             extra_modes: vec![(1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)],
             modes_16bit: true,
             fix_resolution: true,
-            menu_zoom: true,
-            menu_zoom_clip_cursor: true,
+            ui_zoom: 1.0,
+            modern_run: true,
+            fov: crate::fov::DEFAULT_FOV,
         }
     }
 }
@@ -83,8 +87,9 @@ impl Config {
                 "maxheight" => c.max_height = v.parse().unwrap_or(2160),
                 "modes16bit" => c.modes_16bit = parse_bool(v),
                 "fixresolution" => c.fix_resolution = parse_bool(v),
-                "menuzoom" => c.menu_zoom = parse_bool(v),
-                "menuzoomclipcursor" => c.menu_zoom_clip_cursor = parse_bool(v),
+                "modernrun" => c.modern_run = parse_bool(v),
+                "uizoom" => c.ui_zoom = crate::ui::parse_scale(v).unwrap_or(1.0),
+                "fov" => c.fov = crate::fov::clamp(v.parse().unwrap_or(crate::fov::DEFAULT_FOV)),
                 "extramodes" => {
                     c.extra_modes = v
                         .split(',')

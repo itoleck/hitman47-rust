@@ -39,12 +39,6 @@ pub struct World {
     pub last_present: Option<Instant>,
     pub frame_count: u64,
     pub fps_timer: Option<Instant>,
-    /// Per-frame statistics used by the menu zoom (reset at every present):
-    /// number of draws and the union (x0, y0, x1, y1) of the regions they covered.
-    pub frame_2d_draws: u32,
-    pub frame_2d_bbox: Option<[f32; 4]>,
-    /// Source rectangle currently zoomed to the screen, if any.
-    pub zoom_rect: Option<crate::types::RECT>,
 }
 
 static mut WORLD: Option<World> = None;
@@ -71,9 +65,6 @@ pub fn init(dir: PathBuf, config: Config) {
             last_present: None,
             frame_count: 0,
             fps_timer: None,
-            frame_2d_draws: 0,
-            frame_2d_bbox: None,
-            zoom_rect: None,
         });
     }
 }
@@ -100,18 +91,6 @@ pub fn config() -> &'static Config {
 }
 
 impl World {
-    /// Records the screen region a draw covered, for the menu-zoom heuristic
-    /// (viewport for transformed geometry, vertex bounds for pre-transformed).
-    pub fn note_draw(&mut self, region: Option<[f32; 4]>) {
-        self.frame_2d_draws += 1;
-        if let Some(b) = region {
-            self.frame_2d_bbox = Some(match self.frame_2d_bbox {
-                Some(a) => [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])],
-                None => b,
-            });
-        }
-    }
-
     /// The Vulkan device, created on first use.
     pub fn gpu(&mut self) -> Option<&mut Gpu> {
         if self.gpu.is_none() && !self.gpu_failed {

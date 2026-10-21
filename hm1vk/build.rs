@@ -1,7 +1,11 @@
 //! Compiles the WGSL shaders in `shaders/` to SPIR-V with naga, so no Vulkan
-//! SDK (glslc) is required to build.
+//! SDK (glslc) is required to build, and adds the Windows version resource
+//! (version from `version.txt`, bumped by tools\build.bat).
 
 use std::path::PathBuf;
+
+#[path = "../build-support/version_resource.rs"]
+mod version_resource;
 
 fn compile(name: &str, entries: &[(&str, naga::ShaderStage)]) {
     let src_path = PathBuf::from("shaders").join(format!("{name}.wgsl"));
@@ -30,6 +34,12 @@ fn compile(name: &str, entries: &[(&str, naga::ShaderStage)]) {
 }
 
 fn main() {
+    version_resource::embed(&version_resource::VersionInfo {
+        file_description: "Hitman Codename 47 Rust library",
+        original_filename: "ddraw.dll",
+        internal_name: "hm1vk",
+        dll: true,
+    });
     compile("ff", &[("vs_main", naga::ShaderStage::Vertex), ("fs_main", naga::ShaderStage::Fragment)]);
     compile("present", &[("vs_main", naga::ShaderStage::Vertex), ("fs_main", naga::ShaderStage::Fragment)]);
 }

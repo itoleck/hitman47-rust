@@ -743,97 +743,13 @@ pub unsafe fn present(src: This, src_rect: Option<RECT>, dst_client: Option<RECT
         }
         _ => {}
     }
-    let r = if dst_client.is_none() && src_rect.is_none() { menu_zoom(w, hwnd, sw, sh).unwrap_or(r) } else { r };
+    if dst_client.is_none() && src_rect.is_none() {
+        crate::ui::end_frame(sw, sh);
+    }
+    crate::input::install();
     let Some(g) = w.gpu() else { return };
     let dst = dst_client.map(|d| [d.left, d.top, d.right, d.bottom]);
     g.present(hwnd, id, [r.left as u32, r.top as u32, r.right as u32, r.bottom as u32], dst, gamma, vsync);
-}
-
-/// Menu zoom: the engine draws its front-end screens (main menu, options,
-/// laptop briefing, ...) as a fixed 640x480 panel in the centre of the frame,
-/// which is tiny at 3840x2160. When a frame contains only pre-transformed 2D
-/// geometry inside such a centred panel, present just that panel, scaled to
-/// fill the display. The game draws its own cursor into the frame, so what
-/// the player sees and what the game hit-tests stay consistent.
-unsafe fn menu_zoom(w: &mut crate::state::World, hwnd: isize, sw: u32, sh: u32) -> Option<RECT> {
-    let enabled = w.config.menu_zoom;
-    let clip = w.config.menu_zoom_clip_cursor;
-    let (draws, bbox) = (w.frame_2d_draws, w.frame_2d_bbox);
-    w.frame_2d_draws = 0;
-    w.frame_2d_bbox = None;
-    if w.frame_count % 240 == 1 {
-        crate::trace!("frame stats: draws={draws} region={bbox:?} zoom={:?}", w.zoom_rect);
-    }
-    if !enabled {
-        return None;
-    }
-    let (fw, fh) = (sw as f32, sh as f32);
-    let new_zoom = if draws == 0 {
-        // Empty frame (fades, loading): keep the current decision.
-        w.zoom_rect
-    } else {
-        bbox.and_then(|b| {
-            let (x0, y0) = (b[0].max(0.0), b[1].max(0.0));
-            let (x1, y1) = (b[2].min(fw), b[3].min(fh));
-            let (bw, bh) = (x1 - x0, y1 - y0);
-            let centred = ((x0 + x1) / 2.0 - fw / 2.0).abs() <= 8.0 && ((y0 + y1) / 2.0 - fh / 2.0).abs() <= 8.0;
-            // Only zoom panels that are clearly smaller than the screen.
-            if !centred || bw < 160.0 || bh < 120.0 || bw > fw * 0.67 || bh > fh * 0.67 {
-                return None;
-            }
-            // Snap to the engine's standard panel sizes when the content fits one.
-            let snapped = [(640u32, 480u32), (800, 600), (1024, 768)].into_iter().find_map(|(pw, ph)| {
-                let px = ((sw.saturating_sub(pw)) / 2) as f32;
-                let py = ((sh.saturating_sub(ph)) / 2) as f32;
-                let fits = x0 >= px - 2.0 && y0 >= py - 2.0 && x1 <= px + pw as f32 + 2.0 && y1 <= py + ph as f32 + 2.0;
-                fits.then(|| RECT::new(px as i32, py as i32, px as i32 + pw as i32, py as i32 + ph as i32))
-            });
-            Some(snapped.unwrap_or(RECT::new(x0.floor() as i32, y0.floor() as i32, x1.ceil() as i32, y1.ceil() as i32)))
-        })
-    };
-    if new_zoom != w.zoom_rect {
-        info!("menu zoom: {:?}", new_zoom);
-        w.zoom_rect = new_zoom;
-    }
-    if clip {
-        update_cursor_clip(hwnd, new_zoom);
-    }
-    new_zoom
-}
-
-static mut CLIPPED: Option<RECT> = None;
-
-/// Confines the cursor to the zoomed panel while the game is in the
-/// foreground; releases it otherwise.
-unsafe fn update_cursor_clip(hwnd: isize, r: Option<RECT>) {
-    use windows_sys::Win32::Foundation::{POINT, RECT as WRECT};
-    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetForegroundWindow};
-    let want = r.filter(|_| GetForegroundWindow() as isize == hwnd);
-    if want == CLIPPED {
-        return;
-    }
-    match want {
-        Some(r) => {
-            let mut a = POINT { x: r.left, y: r.top };
-            let mut b = POINT { x: r.right, y: r.bottom };
-            ClientToScreen(hwnd as _, &mut a);
-            ClientToScreen(hwnd as _, &mut b);
-            ClipCursor(&WRECT { left: a.x, top: a.y, right: b.x, bottom: b.y });
-        }
-        None => {
-            ClipCursor(std::ptr::null());
-        }
-    }
-    CLIPPED = want;
-}
-
-/// Releases a cursor clip set by the menu zoom (DLL unload).
-pub unsafe fn release_cursor_clip() {
-    if (*&raw const CLIPPED).is_some() {
-        windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor(std::ptr::null());
-        CLIPPED = None;
-    }
 }
 
 // ------------------------------------------------------------ IUnknown
